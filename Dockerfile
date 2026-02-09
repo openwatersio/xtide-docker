@@ -45,12 +45,19 @@ RUN mkdir -p /usr/local/share/xtide \
 # ---------------------------------------------------------------------------
 FROM debian:bookworm-slim
 
+LABEL org.opencontainers.image.title="XTide" \
+      org.opencontainers.image.description="Tide prediction software with CLI (tide), web server (xttpd), and tcd-utils" \
+      org.opencontainers.image.url="https://github.com/openwatersio/xtide-docker" \
+      org.opencontainers.image.source="https://github.com/openwatersio/xtide-docker" \
+      org.opencontainers.image.licenses="GPL-3.0-or-later"
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
   libpng16-16 zlib1g \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/ /usr/local/
 RUN ldconfig
+COPY README.md /README.md
 
 ENV HFILE_PATH=/usr/local/share/xtide/harmonics.tcd
 
