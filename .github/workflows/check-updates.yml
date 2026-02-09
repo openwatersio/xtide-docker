@@ -1,0 +1,96 @@
+name: Check for upstream updates
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check upstream versions
+        id: versions
+        run: |
+          page=$(curl -fsSL https://flaterco.com/xtide/files.html)
+
+          latest_libtcd=$(echo "$page" | grep -oP 'libtcd-\K[0-9][0-9a-z.\-]+(?=\.tar)' | head -1)
+          latest_xtide=$(echo "$page" | grep -oP 'xtide-\K[0-9][0-9.]+(?=\.tar)' | head -1)
+          latest_tcd_utils=$(echo "$page" | grep -oP 'tcd-utils-\K[0-9]+(?=\.tar)' | head -1)
+          latest_harmonics=$(echo "$page" | grep -oP 'harmonics-dwf-\K[0-9]+(?=-free\.tar)' | head -1)
+
+          current_libtcd=$(grep -oP '^ARG LIBTCD_VERSION=\K.+' Dockerfile)
+          current_xtide=$(grep -oP '^ARG XTIDE_VERSION=\K.+' Dockerfile)
+          current_tcd_utils=$(grep -oP '^ARG TCD_UTILS_VERSION=\K.+' Dockerfile)
+          current_harmonics=$(grep -oP '^ARG HARMONICS_VERSION=\K.+' Dockerfile)
+
+          echo "latest_libtcd=$latest_libtcd"
+          echo "latest_xtide=$latest_xtide"
+          echo "latest_tcd_utils=$latest_tcd_utils"
+          echo "latest_harmonics=$latest_harmonics"
+          echo "current_libtcd=$current_libtcd"
+          echo "current_xtide=$current_xtide"
+          echo "current_tcd_utils=$current_tcd_utils"
+          echo "current_harmonics=$current_harmonics"
+
+          changed=false
+          summary=""
+
+          if [ "$latest_libtcd" != "$current_libtcd" ] && [ -n "$latest_libtcd" ]; then
+            sed -i "s/^ARG LIBTCD_VERSION=.*/ARG LIBTCD_VERSION=${latest_libtcd}/" Dockerfile
+            changed=true
+            summary="${summary}- libtcd: ${current_libtcd} → ${latest_libtcd}\n"
+          fi
+          if [ "$latest_xtide" != "$current_xtide" ] && [ -n "$latest_xtide" ]; then
+            sed -i "s/^ARG XTIDE_VERSION=.*/ARG XTIDE_VERSION=${latest_xtide}/" Dockerfile
+            changed=true
+            summary="${summary}- xtide: ${current_xtide} → ${latest_xtide}\n"
+          fi
+          if [ "$latest_tcd_utils" != "$current_tcd_utils" ] && [ -n "$latest_tcd_utils" ]; then
+            sed -i "s/^ARG TCD_UTILS_VERSION=.*/ARG TCD_UTILS_VERSION=${latest_tcd_utils}/" Dockerfile
+            changed=true
+            summary="${summary}- tcd-utils: ${current_tcd_utils} → ${latest_tcd_utils}\n"
+          fi
+          if [ "$latest_harmonics" != "$current_harmonics" ] && [ -n "$latest_harmonics" ]; then
+            sed -i "s/^ARG HARMONICS_VERSION=.*/ARG HARMONICS_VERSION=${latest_harmonics}/" Dockerfile
+            changed=true
+            summary="${summary}- harmonics: ${current_harmonics} → ${latest_harmonics}\n"
+          fi
+
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
+          echo -e "$summary" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create pull request
+        if: steps.versions.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          branch="auto/update-upstream-versions"
+          git checkout -b "$branch"
+          git add Dockerfile
+          git -c user.name="github-actions[bot]" \
+              -c user.email="github-actions[bot]@users.noreply.github.com" \
+              commit -m "Update upstream versions"
+          git push -f origin "$branch"
+
+          body=$(printf 'Automated update detected upstream version changes:\n\n%s\nSource: https://flaterco.com/xtide/files.html' '${{ steps.versions.outputs.summary }}')
+
+          # Create PR if one doesn't already exist for this branch
+          existing_pr=$(gh pr list --head "$branch" --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$existing_pr" ]; then
+            gh pr edit "$existing_pr" --body "$body"
+          else
+            gh pr create \
+              --title "Update upstream versions" \
+              --body "$body" \
+              --head "$branch"
+            gh pr merge --auto --squash "$branch"
+          fi
