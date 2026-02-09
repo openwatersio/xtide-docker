@@ -1,4 +1,4 @@
-# xtide-docker
+# xtide Docker image
 
 Docker image for [XTide](https://flaterco.com/xtide/), a tide prediction program. Includes the `tide` CLI, `xttpd` web server, and `tcd-utils` (`build_tide_db`, `restore_tide_db`), compiled from source with harmonics data.
 
